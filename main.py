@@ -5,6 +5,7 @@
 from datetime import date
 from operator import truediv
 from os import write
+from pickle import FALSE, TRUE
 import re
 import pandas as pd
 import numpy as np
@@ -149,21 +150,21 @@ class writer:
 
         if reaction_status["scattering"]:
             status = "scattering"
-            result = conditions
+            result.extend(conditions)
             result.append(status)
             result.append(2)
             result.append("not calculated")
             writer_summary.writerow(result)
         elif reaction_status["fusion"]:
             status = "fusion"
-            result = conditions
+            result.extend(conditions)
             result.append(status)
             result.append(1)
             result.append("not calculated")
             writer_summary.writerow(result)
         elif reaction_status["fission"]:
             status = "fission"
-            result = conditions
+            result.extend(conditions)
             result.append(status)
             result.append(num_fragment_alltime[-1])
             [result.append(i) for i in fric_ave_result]
@@ -178,15 +179,12 @@ class writer:
         f.write(str_start)
         f.close
 
-    def detail_write(reaction_status,file_out_log,file_out_cm,conditions,reducedmass,nucleus,plots,fric_ave_detail,fric_ave_result):
+    def detail_write(reaction_status,file_out_log,file_out_cm,conditions,reducedmass,nucleus,plots,fric_ave_detail,ene):
 
         f = open("summary_detail.txt",mode="a")
-
-        detail_data = []
-        detail_data = [file_out_log,file_out_cm]
-        detail_data.append(conditions)
-        detail_data.append(reducedmass)
-        detail_data.append(nucleus)
+                
+        #print(f_name_ene)
+        #f_ene = open("")
 
         f.write("file_out_log = " + file_out_log + '\n')
         f.write("file_cm = " + file_out_cm + '\n')
@@ -201,7 +199,7 @@ class writer:
         f.write("nucleus = " + str_nucleus + '\n')
 
         f.write("reduced mass = " + str(reducedmass) + '\n')
-        f.write("E_ini,v_ini = " + str(conditions[-2]) + "," + str(conditions[-1]) + '\n')
+        f.write("E_ini,v_ini = " + str(conditions[4]) + "," + str(conditions[5]) + '\n')
         f.write('\n')
 
         if reaction_status["scattering"]:
@@ -223,21 +221,31 @@ class writer:
         elif reaction_status["fission"]:
             f.write("status = fission")
             f.write('\n')
-            f.write("fusion point : index , time, R = " + str(fric_ave_detail[0]) + "," + str(fric_ave_detail[1]) + "," + str(fric_ave_detail[2]) + '\n')
+            f.write("fusion point : index , time, R = " + str(fric_ave_detail[0]) + ", " + str(fric_ave_detail[1]) + ", " + str(fric_ave_detail[2]) + '\n')
             [f.write(plot_line) for plot_line in plots[fric_ave_detail[0]]]
             f.write('\n')
-            f.write("kinetic energy,potential energy = " + str(fric_ave_detail[3]) + "," + str(fric_ave_detail[4]) + '\n')
+            f.write("kinetic energy,potential energy = " + str(fric_ave_detail[3]) + ", " + str(fric_ave_detail[4]) + '\n')
 
             f.write('\n')
 
-            f.write("fission point : index , time, R = " + str(fric_ave_detail[5]) + "," + str(fric_ave_detail[6])  + "," + str(fric_ave_detail[7]) + '\n')
+            f.write("fission point : index , time, R = " + str(fric_ave_detail[5]) + ", " + str(fric_ave_detail[6])  + ", " + str(fric_ave_detail[7]) + '\n')
             [f.write(plot_line) for plot_line in plots[fric_ave_detail[5]]]
             f.write('\n')
-            f.write("kinetic energy,potential energy = " + str(fric_ave_detail[8]) + "," + str(fric_ave_detail[9]) + '\n')
+            f.write("kinetic energy,potential energy = " + str(fric_ave_detail[8]) + ", " + str(fric_ave_detail[9]) + '\n')
             f.write('\n')
-        
-        f.close
 
+            #make energyfile
+            f_name_ene = "pot" + "_" + str(list(nucleus.values())[0]) + "-" + str(list(nucleus.values())[1]) + "to" + str(list(nucleus.values())[2]) + "-" + str(list(nucleus.values())[3]) + "_" + str(conditions[4]) + ".csv" 
+            f_ene = open(f_name_ene, "w",newline='')
+            header_ene = ["time(fm/c)","R(fm)","nuclear potential(MeV)"]
+            writer = csv.writer(f_ene)
+            writer.writerow(header_ene)
+            writer.writerows(ene)
+            f_ene.close()
+
+
+
+        f.close
 
 class reaction:
     def count_fragment(blank_alltime):
@@ -259,20 +267,20 @@ class reaction:
                 
         return num_fragment_alltime
     
-    def calc_fric(file_out_cm,reducedmass,nucleus,num_fragment_alltime):
+    def calc_fric_pot(file_out_cm,reducedmass,nucleus,num_fragment_alltime):
 
         datas = np.loadtxt(file_out_cm,dtype="float",usecols=[0,1],unpack=True)
         datas[1] = datas[1]*2
 
         #serch before fusion time and after fission time
-        index_bfu = num_fragment_alltime.index(1) - 1
-        index_afi = num_fragment_alltime.index(1) + num_fragment_alltime[num_fragment_alltime.index(1):].index(2)
-
-        #index_afi = (len(num_fragment_alltime) - num_fragment_alltime[::-1].index(1)) - 1
+        is_fragment_alltime = [num_fragment_eachtime == 1 for num_fragment_eachtime in num_fragment_alltime]
+        index_bfu = is_fragment_alltime.index(True) - 1
+        index_afi = is_fragment_alltime.index(True) + is_fragment_alltime[is_fragment_alltime.index(True):].index(False)
 
         #calculate dissipation energy
         ##calculate dR/dt
         cm_differential_first = (np.diff(datas[1],n = 1))/(np.diff(datas[0],n = 1))
+
         K_bfu = 0.5 * reducedmass * (cm_differential_first[index_bfu]**2)
         V_bfu = (float(nucleus["Z1"]) * float(nucleus["Z2"]) * (197.3/137.00) / datas[1][index_bfu])
         E_bfu = K_bfu + V_bfu
@@ -284,7 +292,8 @@ class reaction:
         E_diss = E_bfu - E_afi
 
         #calculate integral (dR/dt)^2
-        cm_differential_first_integrated = integrate.simps(cm_differential_first**2,datas[0][:-1])
+        #cm_diff_2 = cm_differential_first**2
+        cm_differential_first_integrated = integrate.simps((cm_differential_first**2)[index_bfu+1:index_afi-1],datas[0][index_bfu+1:index_afi-1])
 
         #calculate average friction coefficient
         fric_ave = E_diss / cm_differential_first_integrated
@@ -293,7 +302,35 @@ class reaction:
         fric_ave_result = [E_diss,cm_differential_first_integrated,fric_ave]
         fric_ave_detail = [index_bfu,datas[0][index_bfu],datas[1][index_bfu],K_bfu,V_bfu,index_afi,datas[0][index_afi],datas[1][index_afi],K_afi,V_afi]
 
-        return fric_ave_result,fric_ave_detail
+        # calculated V_nucle in terms of the equation of motion
+        cm_differential_second = (np.diff(cm_differential_first,n = 1))/(np.diff(datas[0][:-1],n = 1))
+        V_differential_byt = (-fric_ave * cm_differential_first[:-1] - reducedmass * cm_differential_second) * cm_differential_first[:-1]
+
+        V = []
+        V.append(V_bfu)
+        [V.append(V[i - 1] - (V_differential_byt[i +index_bfu - 1]) * (datas[0][i + index_bfu] - datas[0][i + index_bfu - 1])) for i in range(1,index_afi - index_bfu - 1)]
+
+        V_ele = []
+        [V_ele.append((float(nucleus["Z1"]) * float(nucleus["Z2"]) * (197.3/137.00) / datas[1][i])) for i in range(index_bfu,index_afi - 1)]
+
+        #V_nucle = []
+        V_nucle = [i - j for (i, j) in zip(V, V_ele)]
+  
+        ene = []
+        ene = list(zip(datas[0][index_bfu+1:index_afi],datas[1][index_bfu+1:index_afi],V_nucle))
+
+        #print(ene)
+        #print(V_ele)
+        #print(K)
+        #print(V_nucle)
+        #print(E_diss_all)
+        #print((cm_differential_first**2)[index_bfu+1:index_bfu+3])
+        #print(V)
+        #print(V_ele)
+        #print(len(V))
+        #print(len(V_ele))
+
+        return fric_ave_result,fric_ave_detail,ene
 
 #=====main========
 
@@ -319,33 +356,28 @@ for file in files:
     plots = reader.gain_plot(plot_range[0],file_out_log)
     blank_alltime = reader.gain_blank(plots,plot_range)
     num_fragment_alltime = reaction.count_fragment(blank_alltime)
-    #fric_ave = reaction.calc_fric(file_out_cm,reducedmass,nucleus,num_fragment_alltime
     fric_ave_result = []
     fric_ave_detail = []
 
-    #print(num_fragment_alltime)
-
     is_scattering = all([num_fragment_eachtime == 2 for num_fragment_eachtime in num_fragment_alltime])
-    is_fusin = all([num_fragment_eachtime == 1 for num_fragment_eachtime in num_fragment_alltime[num_fragment_alltime.index(1):]])
+    is_fusion = (num_fragment_alltime[-1] == 1)
     
-    if not (is_scattering or is_fusin):
+    if not (is_scattering or is_fusion):
         is_fission = True
-        fric_ave_result,fric_ave_detail = reaction.calc_fric(file_out_cm,reducedmass,nucleus,num_fragment_alltime)
-        #print(fric_ave_result)
+        fric_ave_result,fric_ave_detail,ene = reaction.calc_fric_pot(file_out_cm,reducedmass,nucleus,num_fragment_alltime)
     else:
         is_fission = False
         fric_ave_result = []
         fric_ave_detail = []
+        ene = []
 
-    reaction_status = {"scattering":is_scattering,"fusion":is_fusin,"fission":is_fission}
-    #print(reaction_status)
-
-    print(fric_ave_detail)
+    reaction_status = {"scattering":is_scattering,"fusion":is_fusion,"fission":is_fission}
 
     writer.summary_write(reaction_status,fric_ave_result)
-    writer.detail_write(reaction_status,file_out_log,file_out_cm,conditions,reducedmass,nucleus,plots,fric_ave_detail,fric_ave_result)
+    writer.detail_write(reaction_status,file_out_log,file_out_cm,conditions,reducedmass,nucleus,plots,fric_ave_detail,ene)
 
-#print(fric_ave_result)
+    print(conditions)
+    print(fric_ave_result)
 
 
 
